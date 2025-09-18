@@ -23,8 +23,9 @@ jobs:
           password: ${{ secrets.QUAY_PASSWORD }}
       
       - name: Install Operator SDK
-        uses: operator-framework/operator-sdk-action@v1
-
+        # --- LÍNEA CORREGIDA ---
+        uses: operator-framework/operator-sdk-action@v2
+      
       - name: Build Operator Image
         run: |
           export IMG="quay.io/${{ secrets.QUAY_USER }}/ldap-proxy-operator:v0.0.1"
