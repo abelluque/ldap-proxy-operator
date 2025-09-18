@@ -1,0 +1,54 @@
+# .github/workflows/release.yaml
+name: Release Operator Images
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-and-push-images:
+    # Usamos un runner de Ubuntu, que es amd64 por defecto
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Login to Quay.io
+        uses: docker/login-action@v2
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USER }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+      
+      - name: Install Operator SDK
+        uses: operator-framework/operator-sdk-action@v1
+
+      - name: Build Operator Image
+        run: |
+          export IMG="quay.io/${{ secrets.QUAY_USER }}/ldap-proxy-operator:v0.0.1"
+          make docker-build IMG=$IMG
+          make docker-push IMG=$IMG
+
+      - name: Build Bundle Image
+        run: |
+          export BUNDLE_IMG="quay.io/${{ secrets.QUAY_USER }}/ldap-proxy-operator-bundle:v0.0.1"
+          make bundle-build bundle-push BUNDLE_IMG=$BUNDLE_IMG
+      
+      - name: Build and Push Catalog Image
+        run: |
+          # Instala opm
+          curl -L "https://github.com/operator-framework/operator-registry/releases/download/v1.23.1/linux-amd64-opm" -o opm
+          chmod +x opm
+          sudo mv opm /usr/local/bin/
+
+          export BUNDLE_IMG="quay.io/${{ secrets.QUAY_USER }}/ldap-proxy-operator-bundle:v0.0.1"
+          export CATALOG_IMG="quay.io/${{ secrets.QUAY_USER }}/ldap-proxy-operator-catalog:v1"
+
+          # Genera el Dockerfile
+          opm index add --bundles ${BUNDLE_IMG} --generate > catalog.Dockerfile
+          
+          # Construye y sube la imagen del catálogo
+          docker build -t ${CATALOG_IMG} -f catalog.Dockerfile .
+          docker push ${CATALOG_IMG}
