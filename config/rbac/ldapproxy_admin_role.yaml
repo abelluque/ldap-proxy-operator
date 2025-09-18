@@ -1,0 +1,27 @@
+# This rule is not used by the project proxy-ldap-operator itself.
+# It is provided to allow the cluster admin to help manage permissions for users.
+#
+# Grants full permissions ('*') over proxy.ar-consulting.redhat.com.
+# This role is intended for users authorized to modify roles and bindings within the cluster,
+# enabling them to delegate specific permissions to other users or groups as needed.
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  labels:
+    app.kubernetes.io/name: proxy-ldap-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: ldapproxy-admin-role
+rules:
+- apiGroups:
+  - proxy.ar-consulting.redhat.com
+  resources:
+  - ldapproxies
+  verbs:
+  - '*'
+- apiGroups:
+  - proxy.ar-consulting.redhat.com
+  resources:
+  - ldapproxies/status
+  verbs:
+  - get

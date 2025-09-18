@@ -1,0 +1,9 @@
+apiVersion: proxy.ar-consulting.redhat.com/v1alpha1
+kind: LdapProxy
+metadata:
+  labels:
+    app.kubernetes.io/name: proxy-ldap-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: ldapproxy-sample
+spec:
+  # TODO(user): Add fields here

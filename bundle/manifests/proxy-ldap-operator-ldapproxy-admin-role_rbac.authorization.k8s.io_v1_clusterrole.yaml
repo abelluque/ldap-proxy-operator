@@ -1,0 +1,21 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  labels:
+    app.kubernetes.io/managed-by: kustomize
+    app.kubernetes.io/name: proxy-ldap-operator
+  name: proxy-ldap-operator-ldapproxy-admin-role
+rules:
+- apiGroups:
+  - proxy.ar-consulting.redhat.com
+  resources:
+  - ldapproxies
+  verbs:
+  - '*'
+- apiGroups:
+  - proxy.ar-consulting.redhat.com
+  resources:
+  - ldapproxies/status
+  verbs:
+  - get

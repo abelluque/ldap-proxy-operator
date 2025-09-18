@@ -1,0 +1,65 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  - services
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - proxy.ar-consulting.redhat.com
+  resources:
+  - ldapproxies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - proxy.ar-consulting.redhat.com
+  resources:
+  - ldapproxies/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - proxy.ar-consulting.redhat.com
+  resources:
+  - ldapproxies/status
+  verbs:
+  - get
+  - patch
+  - update
