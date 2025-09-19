@@ -1,7 +1,12 @@
-package controller
+/*
+Copyright 2025.
+*/
+
+package controllers
 
 import (
 	"context"
+	"reflect"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -14,15 +19,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
-	proxyv1alpha1 "github.com/abelluque/ldap-proxy-operator/api/v1alpha1" // <-- Reemplaza con tu repo
+	proxyv1alpha1 "github.com/abelluque/proxy-ldap-operator/api/v1alpha1" // <-- IMPORTANTE: Reemplaza con la ruta de tu repositorio
 )
 
+// LdapProxyReconciler reconcilia un objeto LdapProxy
 type LdapProxyReconciler struct {
 	client.Client
 	Scheme *runtime.Scheme
 }
 
-// Añadimos permisos para gestionar Secrets
+// Marcadores RBAC: Permisos que necesita el Operador para funcionar.
+// Le damos permisos para gestionar sus propios recursos (ldapproxies) y los que crea (deployments, services, secrets, pods).
 //+kubebuilder:rbac:groups=proxy.ar-consulting.redhat.com,resources=ldapproxies,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=proxy.ar-consulting.redhat.com,resources=ldapproxies/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=proxy.ar-consulting.redhat.com,resources=ldapproxies/finalizers,verbs=update
@@ -33,17 +40,20 @@ type LdapProxyReconciler struct {
 
 func (r *LdapProxyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
-	ldapProxy := &proxyv1alpha1.LdapProxy{}
 
+	// --- 1. Obtener la instancia de LdapProxy ---
+	ldapProxy := &proxyv1alpha1.LdapProxy{}
 	err := r.Get(ctx, req.NamespacedName, ldapProxy)
 	if err != nil {
 		if errors.IsNotFound(err) {
+			logger.Info("Recurso LdapProxy no encontrado. Ignorando, ya que probablemente fue borrado.")
 			return ctrl.Result{}, nil
 		}
+		logger.Error(err, "Falló al obtener LdapProxy")
 		return ctrl.Result{}, err
 	}
 
-	// --- Reconciliar el Secret ---
+	// --- 2. Reconciliar el Secret ---
 	secret := r.secretForLdapProxy(ldapProxy)
 	if err := ctrl.SetControllerReference(ldapProxy, secret, r.Scheme); err != nil {
 		return ctrl.Result{}, err
@@ -60,7 +70,7 @@ func (r *LdapProxyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	// --- Reconciliar el Service ---
+	// --- 3. Reconciliar el Service ---
 	service := r.serviceForLdapProxy(ldapProxy)
 	if err := ctrl.SetControllerReference(ldapProxy, service, r.Scheme); err != nil {
 		return ctrl.Result{}, err
@@ -77,7 +87,7 @@ func (r *LdapProxyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
-	// --- Reconciliar el Deployment ---
+	// --- 4. Reconciliar el Deployment ---
 	deployment := r.deploymentForLdapProxy(ldapProxy)
 	if err := ctrl.SetControllerReference(ldapProxy, deployment, r.Scheme); err != nil {
 		return ctrl.Result{}, err
@@ -95,15 +105,50 @@ func (r *LdapProxyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{}, err
 	}
 
+	// --- 5. Actualizar el Deployment si el número de réplicas cambia ---
+	size := ldapProxy.Spec.Replicas
+	if *foundDeployment.Spec.Replicas != size {
+		foundDeployment.Spec.Replicas = &size
+		err = r.Update(ctx, foundDeployment)
+		if err != nil {
+			logger.Error(err, "Falló al actualizar el Deployment", "Deployment.Namespace", foundDeployment.Namespace, "Deployment.Name", foundDeployment.Name)
+			return ctrl.Result{}, err
+		}
+	}
+
+	// --- 6. Actualizar el Status del recurso LdapProxy ---
+	podList := &corev1.PodList{}
+	listOpts := []client.ListOption{
+		client.InNamespace(ldapProxy.Namespace),
+		client.MatchingLabels(labelsForLdapProxy(ldapProxy.Name)),
+	}
+	if err = r.List(ctx, podList, listOpts...); err != nil {
+		logger.Error(err, "Falló al listar los pods")
+		return ctrl.Result{}, err
+	}
+	podNames := getPodNames(podList.Items)
+
+	if !reflect.DeepEqual(podNames, ldapProxy.Status.Nodes) {
+		ldapProxy.Status.Nodes = podNames
+		err := r.Status().Update(ctx, ldapProxy)
+		if err != nil {
+			logger.Error(err, "Falló al actualizar el status de LdapProxy")
+			return ctrl.Result{}, err
+		}
+	}
+
 	return ctrl.Result{}, nil
 }
 
 // --- Funciones de ayuda para construir los objetos ---
 
+// deploymentForLdapProxy crea la estructura del Deployment
 func (r *LdapProxyReconciler) deploymentForLdapProxy(m *proxyv1alpha1.LdapProxy) *appsv1.Deployment {
 	ls := labelsForLdapProxy(m.Name)
 	replicas := m.Spec.Replicas
-	secretName := m.Name + "-secret" // El nombre del secret deriva del nombre del CR
+	secretName := m.Name + "-secret"
+	proxyImage := "quay.io/rhn-gps-aluque/proxy-ldap:1.0" // <-- VALOR FIJO
+	containerPort := int32(1389)                          // <-- VALOR FIJO
 
 	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{Name: m.Name, Namespace: m.Namespace, Labels: ls},
@@ -114,11 +159,11 @@ func (r *LdapProxyReconciler) deploymentForLdapProxy(m *proxyv1alpha1.LdapProxy)
 				ObjectMeta: metav1.ObjectMeta{Labels: ls},
 				Spec: corev1.PodSpec{
 					Containers: []corev1.Container{{
-						Image:           m.Spec.Image,
+						Image:           proxyImage,
 						Name:            "proxy",
 						ImagePullPolicy: corev1.PullAlways,
 						Ports: []corev1.ContainerPort{{
-							ContainerPort: m.Spec.TargetPort,
+							ContainerPort: containerPort,
 							Name:          "ldap-proxy",
 							Protocol:      corev1.ProtocolTCP,
 						}},
@@ -139,15 +184,20 @@ func (r *LdapProxyReconciler) deploymentForLdapProxy(m *proxyv1alpha1.LdapProxy)
 	return dep
 }
 
+// serviceForLdapProxy crea la estructura del Service
 func (r *LdapProxyReconciler) serviceForLdapProxy(m *proxyv1alpha1.LdapProxy) *corev1.Service {
 	ls := labelsForLdapProxy(m.Name)
+	targetPort := int32(1389)      // <-- VALOR FIJO
+	ldapServicePort := int32(389)  // <-- VALOR FIJO
+	ldapsServicePort := int32(636) // <-- VALOR FIJO
+
 	svc := &corev1.Service{
 		ObjectMeta: metav1.ObjectMeta{Name: m.Name + "-svc", Namespace: m.Namespace, Labels: ls},
 		Spec: corev1.ServiceSpec{
 			Selector: ls,
 			Ports: []corev1.ServicePort{
-				{Name: "ldap", Port: m.Spec.LdapServicePort, TargetPort: intstr.FromInt(int(m.Spec.TargetPort)), Protocol: corev1.ProtocolTCP},
-				{Name: "ldaps", Port: m.Spec.LdapsServicePort, TargetPort: intstr.FromInt(int(m.Spec.TargetPort)), Protocol: corev1.ProtocolTCP},
+				{Name: "ldap", Port: ldapServicePort, TargetPort: intstr.FromInt(int(targetPort)), Protocol: corev1.ProtocolTCP},
+				{Name: "ldaps", Port: ldapsServicePort, TargetPort: intstr.FromInt(int(targetPort)), Protocol: corev1.ProtocolTCP},
 			},
 			Type: corev1.ServiceTypeClusterIP,
 		},
@@ -155,6 +205,7 @@ func (r *LdapProxyReconciler) serviceForLdapProxy(m *proxyv1alpha1.LdapProxy) *c
 	return svc
 }
 
+// secretForLdapProxy crea la estructura del Secret
 func (r *LdapProxyReconciler) secretForLdapProxy(m *proxyv1alpha1.LdapProxy) *corev1.Secret {
 	secretData := map[string]string{
 		"LDAP_HOST":    m.Spec.LdapHost,
@@ -169,10 +220,21 @@ func (r *LdapProxyReconciler) secretForLdapProxy(m *proxyv1alpha1.LdapProxy) *co
 	return secret
 }
 
+// labelsForLdapProxy crea las etiquetas estándar para los recursos
 func labelsForLdapProxy(name string) map[string]string {
 	return map[string]string{"app": name}
 }
 
+// getPodNames obtiene los nombres de los pods a partir de una lista de pods
+func getPodNames(pods []corev1.Pod) []string {
+	var podNames []string
+	for _, pod := range pods {
+		podNames = append(podNames, pod.Name)
+	}
+	return podNames
+}
+
+// SetupWithManager configura el controlador con el Manager
 func (r *LdapProxyReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&proxyv1alpha1.LdapProxy{}).
