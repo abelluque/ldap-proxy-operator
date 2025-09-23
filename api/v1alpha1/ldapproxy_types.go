@@ -1,3 +1,7 @@
+/*
+Copyright 2025.
+*/
+
 package v1alpha1
 
 import (
@@ -12,29 +16,18 @@ type LdapProxySpec struct {
 	// +kubebuilder:default=1
 	Replicas int32 `json:"replicas"`
 
-	// Image es la imagen de contenedor a usar para el proxy ldap.
-	// Contiene la URL completa de tu imagen en Quay.io.
-	// +kubebuilder:validation:Required
-	Image string `json:"image"`
-
 	// --- Configuración del Secret ---
 	// LdapHost es la dirección del servidor LDAP al que el proxy se conectará.
+	// +kubebuilder:validation:Required
 	LdapHost string `json:"ldapHost"`
-	// LdapPort es el puerto del servidor LDAP.
-	LdapPort string `json:"ldapPort"`
-	// LdapUseTLS indica si se debe usar TLS para conectar al servidor LDAP.
-	LdapUseTLS string `json:"ldapUseTLS"`
 
-	// --- Configuración del Service ---
-	// TargetPort es el puerto en el que escucha el contenedor del proxy.
-	// +kubebuilder:default=1389
-	TargetPort int32 `json:"targetPort"`
-	// LdapServicePort es el puerto que expondrá el Service para el tráfico LDAP.
-	// +kubebuilder:default=389
-	LdapServicePort int32 `json:"ldapServicePort"`
-	// LdapsServicePort es el puerto que expondrá el Service para el tráfico LDAPS.
-	// +kubebuilder:default=636
-	LdapsServicePort int32 `json:"ldapsServicePort"`
+	// LdapPort es el puerto del servidor LDAP.
+	// +kubebuilder:validation:Required
+	LdapPort string `json:"ldapPort"`
+
+	// LdapUseTLS indica si se debe usar TLS para conectar al servidor LDAP.
+	// +kubebuilder:validation:Required
+	LdapUseTLS string `json:"ldapUseTLS"`
 
 	// Resources define los requests y limits de CPU/Memoria para el contenedor.
 	// +kubebuilder:validation:Optional
@@ -43,12 +36,14 @@ type LdapProxySpec struct {
 
 // LdapProxyStatus define el estado observado de LdapProxy
 type LdapProxyStatus struct {
-	// PodNames son los nombres de los pods que están corriendo el proxy.
+	// Nodes son los nombres de los pods que están corriendo el proxy.
 	Nodes []string `json:"nodes"`
 }
 
 //+kubebuilder:object:root=true
 //+kubebuilder:subresource:status
+
+// LdapProxy es el Schema para la API de ldapproxies
 type LdapProxy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -58,6 +53,8 @@ type LdapProxy struct {
 }
 
 //+kubebuilder:object:root=true
+
+// LdapProxyList contiene una lista de LdapProxy
 type LdapProxyList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
